@@ -1,0 +1,7 @@
+node_modules/
+temp/
+output/
+logs/
+.env
+last_video_id.txt
+*.log
