@@ -66,6 +66,9 @@ class VideoProcessor {
       }
 
       // Step 6: Generate title and captions for the final video (using first clip)
+      if (selectedClipPaths.length === 0) {
+        throw new Error('No clips were selected for processing');
+      }
       const { title, captions } = await this.proGenerator.generateTitleAndCaptions(selectedClipPaths[0]);
 
       // Step 7: Generate final cut

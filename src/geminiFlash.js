@@ -12,7 +12,13 @@ class GeminiFlashAnalyzer {
     try {
       logger.info(`Analyzing video for cuts: ${videoPath}`);
 
-      const videoData = fs.readFileSync(videoPath);
+      const stats = await fs.promises.stat(videoPath);
+      const MAX_FILE_SIZE = 100 * 1024 * 1024; // 100MB limit
+      if (stats.size > MAX_FILE_SIZE) {
+        throw new Error(`File too large: ${stats.size} bytes`);
+      }
+
+      const videoData = await fs.promises.readFile(videoPath);
       const prompt = `Analise este vídeo e sugira cortes de 15-30 segundos com momentos de alto engajamento, como picos de ação ou humor. Forneça timestamps exatos (início e fim) para cada sugestão de corte.`;
 
       const response = await this.ai.models.generateContent({

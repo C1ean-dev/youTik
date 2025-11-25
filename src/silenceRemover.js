@@ -2,7 +2,7 @@ const ffmpeg = require('fluent-ffmpeg');
 const ffmpegStatic = require('ffmpeg-static');
 const fs = require('fs');
 const path = require('path');
-const { exec } = require('child_process');
+const { exec, execFile } = require('child_process');
 const config = require('./config');
 const logger = require('./logger');
 
@@ -53,8 +53,12 @@ class SilenceRemover {
 
   async detectSilence(inputPath) {
     return new Promise((resolve, reject) => {
-      const command = `"${ffmpegStatic}" -i "${inputPath}" -af silencedetect=noise=${config.processing.silenceThreshold}:d=0.5 -f null - 2>&1`;
-      exec(command, (error, stdout, stderr) => {
+      execFile(ffmpegStatic, [
+        '-i', inputPath,
+        '-af', `silencedetect=noise=${config.processing.silenceThreshold}:d=0.5`,
+        '-f', 'null',
+        '-'
+      ], (error, stdout, stderr) => {
         if (error) {
           reject(error);
         } else {
@@ -71,11 +75,17 @@ class SilenceRemover {
 
     for (const line of lines) {
       if (line.includes('silence_start')) {
-        const silenceStart = parseFloat(line.match(/silence_start: (\d+\.?\d*)/)[1]);
-        segments.push({ start: lastEnd, end: silenceStart });
+        const startMatch = line.match(/silence_start: (\d+\.?\d*)/);
+        if (startMatch) {
+          const silenceStart = parseFloat(startMatch[1]);
+          segments.push({ start: lastEnd, end: silenceStart });
+        }
       } else if (line.includes('silence_end')) {
-        const silenceEnd = parseFloat(line.match(/silence_end: (\d+\.?\d*)/)[1]);
-        lastEnd = silenceEnd;
+        const endMatch = line.match(/silence_end: (\d+\.?\d*)/);
+        if (endMatch) {
+          const silenceEnd = parseFloat(endMatch[1]);
+          lastEnd = silenceEnd;
+        }
       }
     }
 

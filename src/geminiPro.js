@@ -12,7 +12,13 @@ class GeminiProGenerator {
     try {
       logger.info(`Generating title and captions for: ${videoPath}`);
 
-      const videoData = fs.readFileSync(videoPath);
+      const stats = await fs.promises.stat(videoPath);
+      const MAX_FILE_SIZE = 100 * 1024 * 1024; // 100MB limit
+      if (stats.size > MAX_FILE_SIZE) {
+        throw new Error(`File too large: ${stats.size} bytes`);
+      }
+
+      const videoData = await fs.promises.readFile(videoPath);
       const prompt = `Gere um título viral e legendas criativas para este clipe de vídeo, focando em engajamento no TikTok. Forneça o título em uma linha e as legendas como uma lista de frases curtas.`;
 
       const response = await this.ai.models.generateContent({

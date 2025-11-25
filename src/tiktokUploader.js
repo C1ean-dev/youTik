@@ -22,12 +22,17 @@ class TikTokUploader {
       logger.info('Obtained TikTok access token');
       return this.accessToken;
     } catch (error) {
-      logger.error('Failed to get TikTok access token:', error.response?.data || error.message);
+      logger.error('Failed to get TikTok access token:', {
+        status: error.response?.status,
+        message: error.message,
+        // Never log error.response.data as it may contain tokens
+      });
       throw error;
     }
   }
 
-  async uploadVideo(videoPath, title, captions, hashtags = ['#viral', '#tiktok', '#video']) {
+  async uploadVideo(videoPath, title, captions, hashtags = ['#viral', '#tiktok', '#video'], retryCount = 0) {
+    const MAX_RETRIES = 3;
     try {
       if (!this.accessToken) {
         await this.getAccessToken();
@@ -57,9 +62,9 @@ class TikTokUploader {
     } catch (error) {
       logger.error('Error uploading to TikTok:', error.response?.data || error.message);
       // If token expired, try to refresh
-      if (error.response?.status === 401) {
+      if (error.response?.status === 401 && retryCount < MAX_RETRIES) {
         this.accessToken = null;
-        return this.uploadVideo(videoPath, title, captions, hashtags);
+        return this.uploadVideo(videoPath, title, captions, hashtags, retryCount + 1);
       }
       throw error;
     }

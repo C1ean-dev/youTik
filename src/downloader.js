@@ -56,7 +56,6 @@ class VideoDownloader {
 
     try {
       this.lastApiCall = Date.now();
-
       const response = await this.youtube.search.list({
         part: 'snippet',
         channelId: channelId,
