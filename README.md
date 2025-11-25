@@ -19,7 +19,10 @@ A modular Node.js system for automating the processing of YouTube videos for Tik
 
 1. Clone the repository
 2. Run `npm install`
-3. Copy `.env` and fill in your API keys and configurations
+3. Copy `.env.example` to `.env` and fill in your API keys and configurations
+   ```bash
+   cp .env.example .env
+   ```
 
 ## API Setup
 
