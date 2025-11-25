@@ -5,3 +5,4 @@ logs/
 .env
 last_video_id.txt
 *.log
+.kilocode/
