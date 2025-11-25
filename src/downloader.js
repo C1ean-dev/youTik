@@ -11,27 +11,40 @@ class VideoDownloader {
       version: 'v3',
       auth: config.youtube.apiKey,
     });
-    this.lastVideoId = null;
-    this.loadLastVideoId();
+    this.lastVideoIds = {}; // Map of channelId to last video ID
+    this.loadLastVideoIds();
     this.isMonitoring = false; // Prevent multiple monitoring instances
     this.lastApiCall = 0;
-    this.minApiInterval = 1000; // Minimum 1 second between API calls
+    this.minApiInterval = config.youtube.minApiIntervalMs; // Minimum interval between API calls
   }
 
-  loadLastVideoId() {
-    const filePath = path.join(__dirname, '..', 'last_video_id.txt');
+  loadLastVideoIds() {
+    const filePath = path.join(__dirname, '..', 'last_video_ids.json');
     if (fs.existsSync(filePath)) {
-      this.lastVideoId = fs.readFileSync(filePath, 'utf8').trim();
+      try {
+        this.lastVideoIds = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+      } catch (error) {
+        logger.warn('Error loading last video IDs, starting fresh:', error.message);
+        this.lastVideoIds = {};
+      }
     }
   }
 
-  saveLastVideoId(videoId) {
-    const filePath = path.join(__dirname, '..', 'last_video_id.txt');
-    fs.writeFileSync(filePath, videoId);
-    this.lastVideoId = videoId;
+  saveLastVideoIds() {
+    const filePath = path.join(__dirname, '..', 'last_video_ids.json');
+    fs.writeFileSync(filePath, JSON.stringify(this.lastVideoIds, null, 2));
   }
 
-  async getLatestVideoId() {
+  getLastVideoId(channelId) {
+    return this.lastVideoIds[channelId] || null;
+  }
+
+  setLastVideoId(channelId, videoId) {
+    this.lastVideoIds[channelId] = videoId;
+    this.saveLastVideoIds();
+  }
+
+  async getLatestVideoId(channelId) {
     // Rate limiting: ensure minimum interval between API calls
     const now = Date.now();
     const timeSinceLastCall = now - this.lastApiCall;
@@ -46,18 +59,18 @@ class VideoDownloader {
 
       const response = await this.youtube.search.list({
         part: 'snippet',
-        channelId: config.youtube.channelId,
+        channelId: channelId,
         order: 'date',
         maxResults: 1,
       });
 
       if (!response.data.items || response.data.items.length === 0) {
-        logger.debug('No videos found for channel');
+        logger.debug(`No videos found for channel ${channelId}`);
         return null;
       }
 
       const videoId = response.data.items[0]?.id?.videoId;
-      logger.debug(`Latest video ID: ${videoId}`);
+      logger.debug(`Latest video ID for channel ${channelId}: ${videoId}`);
       return videoId;
     } catch (error) {
       // Enhance error information
@@ -73,11 +86,11 @@ class VideoDownloader {
         }
 
         if (status === 400 && reason === 'invalid_channel') {
-          throw new Error(`Invalid YouTube channel ID: ${config.youtube.channelId}`);
+          throw new Error(`Invalid YouTube channel ID: ${channelId}`);
         }
       }
 
-      logger.error('Error fetching latest video ID:', error.message);
+      logger.error(`Error fetching latest video ID for channel ${channelId}:`, error.message);
       throw error;
     }
   }
@@ -102,16 +115,45 @@ class VideoDownloader {
     }
   }
 
-  async monitorAndDownload() {
-    const latestVideoId = await this.getLatestVideoId();
-    if (latestVideoId && latestVideoId !== this.lastVideoId) {
-      logger.info(`New video detected: ${latestVideoId}`);
-      const outputPath = path.join(config.paths.tempDir, `${latestVideoId}.mp4`);
+  async monitorAndDownloadForChannel(channelId) {
+    const latestVideoId = await this.getLatestVideoId(channelId);
+    const lastVideoId = this.getLastVideoId(channelId);
+
+    if (latestVideoId && latestVideoId !== lastVideoId) {
+      logger.info(`New video detected for channel ${channelId}: ${latestVideoId}`);
+      const outputPath = path.join(config.paths.tempDir, `${channelId}_${latestVideoId}.mp4`);
       await this.downloadVideo(latestVideoId, outputPath);
-      this.saveLastVideoId(latestVideoId);
-      return outputPath;
+      this.setLastVideoId(channelId, latestVideoId);
+      return { outputPath, channelId, videoId: latestVideoId };
     }
     return null;
+  }
+
+  async monitorAndDownload() {
+    const results = [];
+
+    // Monitor main channel if configured
+    if (config.youtube.channelId) {
+      try {
+        const result = await this.monitorAndDownloadForChannel(config.youtube.channelId);
+        if (result) results.push(result);
+      } catch (error) {
+        logger.error(`Error monitoring main channel ${config.youtube.channelId}:`, error.message);
+      }
+    }
+
+    // Monitor additional channels
+    for (const channelRef of config.youtube.channels) {
+      try {
+        const channelId = await this.resolveChannelId(channelRef);
+        const result = await this.monitorAndDownloadForChannel(channelId);
+        if (result) results.push(result);
+      } catch (error) {
+        logger.error(`Error monitoring channel ${channelRef}:`, error.message);
+      }
+    }
+
+    return results.length > 0 ? results : null;
   }
 
   async processTestVideos() {
@@ -152,7 +194,77 @@ class VideoDownloader {
     return null;
   }
 
-  startMonitoring(intervalMs = 300000) { // 5 minutes
+  extractChannelHandle(channelRef) {
+    // Handle different channel reference formats
+    if (channelRef.startsWith('@')) {
+      return channelRef.substring(1); // Remove @
+    }
+
+    // Extract from URL
+    const urlPattern = /youtube\.com\/@([a-zA-Z0-9_-]+)/;
+    const match = channelRef.match(urlPattern);
+    if (match) return match[1];
+
+    // If it's already a handle without @
+    if (/^[a-zA-Z0-9_-]+$/.test(channelRef)) {
+      return channelRef;
+    }
+
+    return null;
+  }
+
+  async resolveChannelId(channelRef) {
+    // If it's already a channel ID (starts with UC and 24 chars)
+    if (/^UC[a-zA-Z0-9_-]{22}$/.test(channelRef)) {
+      return channelRef;
+    }
+
+    const handle = this.extractChannelHandle(channelRef);
+    if (!handle) {
+      throw new Error(`Invalid channel reference: ${channelRef}`);
+    }
+
+    // Rate limiting
+    const now = Date.now();
+    const timeSinceLastCall = now - this.lastApiCall;
+    if (timeSinceLastCall < this.minApiInterval) {
+      const waitTime = this.minApiInterval - timeSinceLastCall;
+      await new Promise(resolve => setTimeout(resolve, waitTime));
+    }
+
+    try {
+      this.lastApiCall = Date.now();
+
+      const response = await this.youtube.search.list({
+        part: 'snippet',
+        q: `@${handle}`,
+        type: 'channel',
+        maxResults: 1,
+      });
+
+      if (!response.data.items || response.data.items.length === 0) {
+        throw new Error(`Channel not found: @${handle}`);
+      }
+
+      const channelId = response.data.items[0]?.snippet?.channelId;
+      if (!channelId) {
+        throw new Error(`Could not resolve channel ID for @${handle}`);
+      }
+
+      logger.debug(`Resolved @${handle} to channel ID: ${channelId}`);
+      return channelId;
+    } catch (error) {
+      logger.error(`Error resolving channel ${channelRef}:`, error.message);
+      throw error;
+    }
+  }
+
+  startMonitoring(intervalMs = null, onNewVideos = null) {
+    // Use config default if not specified
+    if (intervalMs === null) {
+      intervalMs = config.youtube.monitoringIntervalMinutes * 60 * 1000;
+    }
+
     // Prevent multiple monitoring instances
     if (this.isMonitoring) {
       logger.warn('Monitoring already running, skipping start request');
@@ -169,12 +281,16 @@ class VideoDownloader {
 
     const monitor = async () => {
       try {
-        const videoPath = await this.monitorAndDownload();
-        if (videoPath) {
-          logger.info('New video downloaded, starting processing...');
+        const results = await this.monitorAndDownload();
+        if (results && results.length > 0) {
+          logger.info(`${results.length} new video(s) downloaded, starting processing...`);
           consecutiveErrors = 0; // Reset error count on success
           currentInterval = intervalMs; // Reset to original interval on success
-          // This will be called from main index.js
+
+          // Call the callback with the results
+          if (onNewVideos) {
+            onNewVideos(results);
+          }
         } else {
           logger.debug('No new videos found');
         }
@@ -193,9 +309,9 @@ class VideoDownloader {
           logger.error('Error in monitoring:', error.message);
         }
 
-        // If too many consecutive errors, increase interval (but don't exceed 1 hour)
-        if (consecutiveErrors >= 3) {
-          currentInterval = Math.min(currentInterval * 2, 3600000); // Max 1 hour
+        // If too many consecutive errors, increase interval
+        if (consecutiveErrors >= config.youtube.consecutiveErrorsThreshold) {
+          currentInterval = Math.min(currentInterval * 2, config.youtube.maxMonitoringIntervalMinutes * 60 * 1000);
           logger.warn(`Multiple consecutive errors (${consecutiveErrors}). Increasing check interval to ${Math.ceil(currentInterval / 60000)} minutes.`);
         }
 

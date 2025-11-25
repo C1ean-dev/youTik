@@ -96,18 +96,43 @@ class VideoProcessor {
   async start() {
     logger.info('Starting YouTube to TikTok automation...');
 
-    // Process test videos first if in development mode
-    if (config.development.processTestVideosFirst) {
+    const operationMode = config.development.operationMode;
+    logger.info(`Operation mode: ${operationMode}`);
+
+    // Process test videos if in test mode or both
+    if ((operationMode === 'test' || operationMode === 'both') && config.development.processTestVideosFirst) {
+      logger.info('Processing test videos...');
       const testVideos = await this.downloader.processTestVideos();
       for (const videoPath of testVideos) {
         await this.processVideo(videoPath);
       }
     }
 
-    // Start monitoring for new videos
-    this.downloader.startMonitoring(config.youtube.monitoringIntervalMinutes * 60 * 1000);
+    // Start monitoring if in monitor mode or both
+    if (operationMode === 'monitor' || operationMode === 'both') {
+      // Callback for when new videos are downloaded
+      const onNewVideos = async (results) => {
+        for (const result of results) {
+          try {
+            await this.processVideo(result.outputPath);
+          } catch (error) {
+            logger.error(`Error processing video ${result.videoId} from channel ${result.channelId}:`, error);
+          }
+        }
+      };
 
-    logger.info(`Monitoring started. Checking every ${config.youtube.monitoringIntervalMinutes} minutes.`);
+      // Start monitoring for new videos
+      this.downloader.startMonitoring(null, onNewVideos);
+
+      logger.info(`Monitoring started. Checking every ${config.youtube.monitoringIntervalMinutes} minutes.`);
+    } else {
+      logger.info('Monitoring disabled by operation mode configuration.');
+    }
+
+    // If only test mode and no test videos to process, exit
+    if (operationMode === 'test' && !config.development.processTestVideosFirst) {
+      logger.info('Test mode enabled but processTestVideosFirst is disabled. Nothing to do.');
+    }
   }
 }
 

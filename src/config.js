@@ -4,9 +4,15 @@ module.exports = {
   youtube: {
     apiKey: process.env.YOUTUBE_API_KEY,
     channelId: process.env.YOUTUBE_CHANNEL_ID,
-    // Additional channels to monitor (can be channel IDs or full URLs)
+    monitoringIntervalMinutes: parseInt(process.env.YOUTUBE_MONITORING_INTERVAL_MINUTES) || 5,
+    // API rate limiting
+    minApiIntervalMs: parseInt(process.env.YOUTUBE_MIN_API_INTERVAL_MS) || 1000, // Minimum ms between API calls
+    maxMonitoringIntervalMinutes: parseInt(process.env.YOUTUBE_MAX_MONITORING_INTERVAL_MINUTES) || 60, // Max backoff interval
+    consecutiveErrorsThreshold: parseInt(process.env.YOUTUBE_CONSECUTIVE_ERRORS_THRESHOLD) || 3, // Errors before increasing interval
+    // Additional channels to monitor (can be channel IDs, handles, or full URLs)
     channels: [
-      'UCIgXqqCK0L8KfJ0Q9rcYqA', // Example channel
+      'https://www.youtube.com/@FlowPodcast', // Example channel URL
+      '@FlowPodcast', // Example handle
       // Add more channels here or from env
     ],
     // Test videos for development (can be video IDs or full YouTube URLs)
@@ -46,6 +52,7 @@ module.exports = {
   development: {
     mode: process.env.DEVELOPMENT_MODE === 'true',
     processTestVideosFirst: process.env.PROCESS_TEST_VIDEOS_FIRST === 'true',
+    operationMode: process.env.OPERATION_MODE || 'both', // 'monitor', 'test', or 'both'
   },
   logging: {
     level: process.env.LOG_LEVEL,

@@ -4,16 +4,18 @@ A modular Node.js system for automating the processing of YouTube videos for Tik
 
 ## Features
 
-- Monitors YouTube channel for new videos
-- Downloads latest videos automatically
-- Processes videos: removes silence, accelerates, reduces resolution
-- Divides into sliding window parts
-- Uses Gemini AI for cut suggestions and content generation
-- Generates final TikTok-ready video with titles and captions
-- Uploads to TikTok automatically
-- **Rate Limiting**: Prevents API abuse with minimum intervals between calls
-- **Quota Protection**: Automatically stops when API limits are reached
-- **Error Handling**: Intelligent retry logic and monitoring pause on failures
+- **Multi-Channel Monitoring**: Monitors multiple YouTube channels for new videos
+- **Flexible Channel Input**: Supports channel IDs, handles (@username), and full URLs
+- **Automatic Downloads**: Downloads latest videos from monitored channels
+- **Video Processing Pipeline**: Removes silence, accelerates, reduces resolution
+- **AI-Powered Editing**: Uses Gemini AI for intelligent cut suggestions and content generation
+- **TikTok Optimization**: Generates final videos with titles and captions optimized for TikTok
+- **Automated Upload**: Uploads processed videos to TikTok automatically
+- **Operation Modes**: Choose between monitoring, testing, or both modes
+- **Rate Limiting**: Prevents API abuse with configurable intervals between calls
+- **Quota Protection**: Automatically stops when YouTube API limits are reached
+- **Intelligent Error Handling**: Retry logic with exponential backoff and monitoring pause
+- **Configurable Settings**: Extensive environment variable configuration for all aspects
 
 ## Installation
 
@@ -50,47 +52,175 @@ Before running the system, you need to obtain API keys from the following servic
 
 ## Configuration
 
-Edit the `.env` file with your credentials:
+### Environment Variables
 
-- YOUTUBE_API_KEY: Your YouTube Data API v3 key
-- GEMINI_API_KEY: Your Google Gemini API key
-- TIKTOK_CLIENT_KEY: TikTok API client key
-- TIKTOK_CLIENT_SECRET: TikTok API client secret
-- LOG_QUIET: Set to `true` to reduce verbose logging (default: false)
+Copy `.env.example` to `.env` and configure the following variables:
 
-### Additional Configuration
+#### API Credentials
+- `YOUTUBE_API_KEY`: Your YouTube Data API v3 key
+- `GEMINI_API_KEY`: Your Google Gemini API key
+- `TIKTOK_CLIENT_KEY`: TikTok API client key
+- `TIKTOK_CLIENT_SECRET`: TikTok API client secret
 
-In `src/config.js`, you can configure:
+#### YouTube Configuration
+- `YOUTUBE_CHANNEL_ID`: Primary YouTube channel ID (optional if using channels array)
+- `YOUTUBE_MONITORING_INTERVAL_MINUTES`: How often to check for new videos (default: 5)
+- `YOUTUBE_MIN_API_INTERVAL_MS`: Minimum milliseconds between API calls (default: 1000)
+- `YOUTUBE_MAX_MONITORING_INTERVAL_MINUTES`: Max backoff interval on errors (default: 60)
+- `YOUTUBE_CONSECUTIVE_ERRORS_THRESHOLD`: Errors before increasing interval (default: 3)
 
-- **Channels to monitor**: Add YouTube channel IDs or full URLs in the `channels` array
-- **Test videos**: Add video IDs or full YouTube URLs in the `testVideos` array for development/testing
-- **Gemini models**: Configure which Gemini models to use (`flash` and `pro`)
-- **AI prompts**: Customize the prompts used for video analysis and content generation
-- **Development mode**: Set `processTestVideosFirst: true` to process test videos before monitoring
+#### Operation Mode
+- `OPERATION_MODE`: Choose operation mode
+  - `monitor`: Only monitor channels for new videos
+  - `test`: Only process test videos
+  - `both`: Monitor channels AND process test videos (default)
 
-Example configuration in `src/config.js`:
+#### File Paths
+- `TEMP_DIR`: Directory for temporary files (default: ./temp)
+- `OUTPUT_DIR`: Directory for final output videos (default: ./output)
+
+#### Processing Settings
+- `SILENCE_THRESHOLD`: Silence detection threshold (default: -30dB)
+- `ACCELERATION_FACTOR`: Video speed multiplier (default: 2.0)
+- `TARGET_RESOLUTION`: Output resolution (default: 854x480)
+- `SLIDING_WINDOW_PARTS`: Number of parts to divide video into (default: 10)
+- `SLIDING_WINDOW_STEP_PERCENT`: Overlap percentage between parts (default: 10)
+- `FINAL_VIDEO_DURATION`: Target duration in seconds (default: 60)
+
+#### Development & Logging
+- `DEVELOPMENT_MODE`: Enable development features (default: true)
+- `PROCESS_TEST_VIDEOS_FIRST`: Process test videos before monitoring (default: true)
+- `LOG_LEVEL`: Logging level (default: info)
+- `LOG_FILE`: Log file path (default: ./logs/app.log)
+- `LOG_QUIET`: Reduce verbose logging (default: false)
+
+### Channel Configuration
+
+Configure channels to monitor in `src/config.js`:
+
 ```javascript
 channels: [
-  'UCIgXqqCK0L8KfJ0Q9rcYqA', // Channel ID
-  'https://www.youtube.com/@examplechannel' // Full URL
+  // Multiple input formats supported:
+  'UC1234567890abcdef',                    // Channel ID
+  '@FlowPodcast',                          // Handle only
+  'https://www.youtube.com/@FlowPodcast',  // Full URL
+  'https://www.youtube.com/channel/UC123'  // Legacy URL format
 ],
+```
+
+### Test Videos Configuration
+
+Configure test videos for development:
+
+```javascript
 testVideos: [
-  'https://www.youtube.com/watch?v=dQw4w9WgXcQ', // Full URL
-  'jNQXAC9IVRw' // Video ID only
+  'https://www.youtube.com/watch?v=dQw4w9WgXcQ', // Full YouTube URL
+  'jNQXAC9IVRw',                                 // Video ID only
+  'https://youtu.be/9bZkp7q19f0'                 // Short URL
 ],
+```
+
+### AI Configuration
+
+Customize Gemini models and prompts in `src/config.js`:
+
+```javascript
 models: {
   flash: 'gemini-2.5-flash',
   pro: 'gemini-2.5-pro'
 },
 prompts: {
-  cutAnalysis: 'Custom prompt for video cut analysis...',
-  titleAndCaptions: 'Custom prompt for title and captions...'
+  cutAnalysis: 'Analyze this video and suggest cuts under 1 minute with high engagement moments...',
+  titleAndCaptions: 'Generate a viral TikTok title and captions for this video clip...'
 }
 ```
 
 ## Usage
 
-Run `npm start` to start monitoring and processing.
+### Basic Usage
+
+Run `npm start` to start the system with default configuration (monitoring + testing).
+
+### Operation Modes
+
+Choose what the system should do using the `OPERATION_MODE` environment variable:
+
+#### Monitor Mode (Production)
+Only monitor channels for new videos and process them automatically:
+```bash
+OPERATION_MODE=monitor npm start
+```
+
+#### Test Mode (Development)
+Only process test videos for development and testing:
+```bash
+OPERATION_MODE=test npm start
+```
+
+#### Both Mode (Default)
+Process test videos first, then start monitoring:
+```bash
+OPERATION_MODE=both npm start
+# or simply:
+npm start
+```
+
+### Examples
+
+```bash
+# Development with test videos only
+OPERATION_MODE=test PROCESS_TEST_VIDEOS_FIRST=true npm start
+
+# Production monitoring with custom interval
+OPERATION_MODE=monitor YOUTUBE_MONITORING_INTERVAL_MINUTES=10 npm start
+
+# Quick test run
+OPERATION_MODE=test npm start
+```
+
+## Multi-Channel Monitoring
+
+The system supports monitoring multiple YouTube channels simultaneously. Configure channels in `src/config.js`:
+
+### Supported Channel Formats
+
+```javascript
+channels: [
+  // 1. Channel Handle (recommended)
+  '@FlowPodcast',
+  '@MrBeast',
+
+  // 2. Full YouTube URLs
+  'https://www.youtube.com/@FlowPodcast',
+  'https://www.youtube.com/@TechReviews',
+
+  // 3. Channel IDs (direct)
+  'UC1234567890abcdef',
+  'UC987654321fedcba',
+
+  // 4. Legacy channel URLs
+  'https://www.youtube.com/channel/UC1234567890abcdef'
+],
+```
+
+### How Channel Resolution Works
+
+1. **Handles (@username)**: Automatically resolved to channel IDs using YouTube API
+2. **URLs**: Extracted handle or channel ID from the URL
+3. **Direct IDs**: Used as-is for maximum efficiency
+
+### Channel Tracking
+
+- Each channel maintains its own "last video" tracking
+- New videos from any monitored channel trigger the processing pipeline
+- Failed resolutions are logged but don't stop other channels
+
+### Best Practices
+
+- Use handles (`@ChannelName`) for readability and maintainability
+- Mix different formats as needed
+- Monitor up to 10-15 channels per instance (API quota considerations)
+- Test channel configurations in test mode first
 
 ## Architecture
 
@@ -112,14 +242,56 @@ Run `npm test` to execute unit tests.
 
 ## Troubleshooting
 
-### YouTube API Quota Exceeded
+### YouTube API Issues
+
+#### Quota Exceeded
 If you see quota exceeded errors:
 1. Check your YouTube API key in `.env`
-2. Verify the channel ID is correct
-3. Monitor your API usage in Google Cloud Console
-4. The system will automatically pause monitoring when quota is exceeded
-5. **Rate Limiting**: System includes automatic rate limiting (1 second minimum between API calls)
-6. **Quota Protection**: Monitoring stops completely when quota is exceeded to prevent further charges
+2. Monitor your API usage in Google Cloud Console
+3. The system automatically pauses monitoring when quota is exceeded
+4. **Rate Limiting**: Configurable minimum intervals between API calls (default: 1 second)
+5. **Quota Protection**: Monitoring stops completely to prevent further charges
+
+#### Channel Resolution Failures
+If channels can't be resolved:
+1. Verify the handle format: `@ChannelName` (without spaces)
+2. Check if the channel exists and is public
+3. Try using the full URL format instead
+4. Some channels may have custom URLs that don't follow standard patterns
+
+#### Invalid Channel References
+Common issues:
+- **Wrong format**: Use `@handle` or full URLs, not just usernames
+- **Private channels**: Only public channels can be monitored
+- **Deleted channels**: Verify the channel still exists
+- **Custom URLs**: Some channels use custom URLs that may not resolve correctly
+
+### Operation Mode Issues
+
+#### Test Mode Not Working
+If test videos aren't processing:
+1. Ensure `PROCESS_TEST_VIDEOS_FIRST=true` in `.env`
+2. Check that `testVideos` array is populated in `config.js`
+3. Verify video URLs/IDs are valid and accessible
+
+#### Monitor Mode Not Starting
+If monitoring doesn't start:
+1. Check `OPERATION_MODE` is set to `monitor` or `both`
+2. Verify `channels` array has valid entries in `config.js`
+3. Ensure YouTube API key has proper permissions
+4. Check API quota hasn't been exceeded
+
+### Performance & Configuration
+
+#### Slow Channel Resolution
+- Channel resolution on startup can take time for many channels
+- Consider using direct channel IDs for faster startup
+- Handles are resolved once and cached per session
+
+#### Memory Usage
+- Processing multiple channels simultaneously increases memory usage
+- Consider running separate instances for different channel groups
+- Monitor system resources when processing many videos
 
 ### Verbose Logging
 To reduce log spam:
@@ -128,12 +300,65 @@ To reduce log spam:
 3. Check logs in `./logs/app.log`
 
 ### Common Issues
-- **Invalid Channel ID**: Verify the YouTube channel ID format
+- **Invalid Channel ID**: Verify YouTube channel ID/handle format
 - **API Authentication**: Ensure all API keys are valid and have proper permissions
 - **FFmpeg Not Found**: Make sure FFmpeg is installed and accessible
+- **File Permissions**: Ensure write access to temp and output directories
+- **Network Issues**: Check internet connectivity for API calls and downloads
+
+## Advanced Configuration
+
+### Rate Limiting & API Management
+
+The system includes sophisticated rate limiting to prevent API abuse:
+
+- **Minimum API Interval**: Configurable delay between YouTube API calls
+- **Error Backoff**: Exponential backoff on consecutive failures
+- **Quota Protection**: Automatic shutdown when API limits are reached
+- **Per-Channel Tracking**: Individual monitoring state for each channel
+
+Configure in `.env`:
+```bash
+YOUTUBE_MIN_API_INTERVAL_MS=1000          # 1 second minimum
+YOUTUBE_MAX_MONITORING_INTERVAL_MINUTES=60 # Max 1 hour backoff
+YOUTUBE_CONSECUTIVE_ERRORS_THRESHOLD=3     # Errors before backoff
+```
+
+### Monitoring Intervals
+
+- **Base Interval**: How often to check for new videos (default: 5 minutes)
+- **Dynamic Adjustment**: Increases automatically on errors
+- **Per-Channel**: Each channel checked independently
+- **Rate Limited**: Respects API quotas and rate limits
+
+### File Management
+
+- **Temporary Files**: Automatically cleaned up after processing
+- **Output Organization**: Final videos stored with timestamps
+- **Error Recovery**: Failed downloads don't leave partial files
 
 ## Requirements
 
-- Node.js
-- FFmpeg
-- API keys for YouTube, Gemini, TikTok
+- Node.js (v16+ recommended)
+- FFmpeg (latest version)
+- API keys for YouTube Data API v3, Google Gemini, and TikTok
+- Sufficient disk space for video processing (recommend 10GB+)
+- Stable internet connection for API calls and downloads
+
+## API Quotas & Costs
+
+### YouTube Data API v3
+- **Daily Quota**: 10,000 units (resets daily)
+- **Cost**: $0.015 per 1,000 units
+- **Monitoring Cost**: ~50-100 units per channel per day
+- **Resolution Cost**: ~100 units per new channel added
+
+### Google Gemini API
+- **Pricing**: Pay-per-use based on tokens
+- **Typical Usage**: $0.01-0.05 per video processed
+
+### TikTok API
+- **Free Tier**: Limited uploads
+- **Paid Plans**: Based on usage
+
+Monitor your usage in respective developer consoles to avoid unexpected costs.
